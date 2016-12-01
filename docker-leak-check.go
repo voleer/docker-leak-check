@@ -27,14 +27,10 @@ type layerDBItem struct {
 	visited bool
 }
 
-var layerMap = make(map[string]*layerDBItem)
-
 type rawLayerType struct {
 	ID      string
 	visited bool
 }
-
-var rawLayerMap = make(map[string]*rawLayerType)
 
 func folderexists(path string) bool {
 	_, err := os.Stat(path)
@@ -72,29 +68,22 @@ func main() {
 			fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", rawLayerFolder)
 			os.Exit(-1)
 		}
-		err := populateRawLayerMap(rawLayerFolder)
+		rawLayerMap, err := createRawLayerMap(rawLayerFolder)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(-1)
 		}
 
-		err = populateLayerDBMap(layerDBFolder)
+		layerMap, err := populateLayerDBMap(layerDBFolder)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(-1)
 		}
 
-		err = verifyImages(imageDBFolder)
+		err = verifyImages(imageDBFolder, layerMap, rawLayerMap)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(-1)
-		}
-
-		for _, layer := range layerMap {
-			if layer.visited == false {
-				fmt.Println("Error: layer not referenced: ", layer.ID)
-				os.Exit(-1)
-			}
 		}
 
 		for _, layer := range layerMap {
@@ -116,11 +105,12 @@ func main() {
 	}
 }
 
-func populateRawLayerMap(rawLayerFolder string) error {
+func createRawLayerMap(rawLayerFolder string) (map[string]*rawLayerType, error) {
 	files, err := ioutil.ReadDir(rawLayerFolder)
 	if err != nil {
-		return fmt.Errorf("Error: failed to read files in %s: %v", rawLayerFolder, err)
+		return nil, fmt.Errorf("Error: failed to read files in %s: %v", rawLayerFolder, err)
 	}
+	var rawLayerMap = make(map[string]*rawLayerType)
 	for _, f := range files {
 		if f.IsDir() {
 			rawLayer := &rawLayerType{}
@@ -128,15 +118,16 @@ func populateRawLayerMap(rawLayerFolder string) error {
 			rawLayerMap[rawLayer.ID] = rawLayer
 		}
 	}
-	return nil
+	return rawLayerMap, nil
 }
 
-func populateLayerDBMap(layerDBFolder string) error {
+func populateLayerDBMap(layerDBFolder string) (map[string]*layerDBItem, error) {
 	// enumerate the existing layers in the LayerDB
 	files, err := ioutil.ReadDir(layerDBFolder)
 	if err != nil {
-		return fmt.Errorf("Error: failed to read files in %s: %v", layerDBFolder, err)
+		return nil, fmt.Errorf("Error: failed to read files in %s: %v", layerDBFolder, err)
 	}
+	var layerMap = make(map[string]*layerDBItem)
 	for _, f := range files {
 		if f.IsDir() {
 			layer := &layerDBItem{}
@@ -145,24 +136,24 @@ func populateLayerDBMap(layerDBFolder string) error {
 			diffFile := filepath.Join(layerDBFolder, f.Name(), "diff")
 			dat, err := ioutil.ReadFile(diffFile)
 			if err != nil {
-				return fmt.Errorf("Error: failed to read file %s: %v", diffFile, err)
+				return nil, fmt.Errorf("Error: failed to read file %s: %v", diffFile, err)
 			}
 			layer.diff = string(dat)
 
 			cacheIDFile := filepath.Join(layerDBFolder, f.Name(), "cache-id")
 			dat, err = ioutil.ReadFile(cacheIDFile)
 			if err != nil {
-				return fmt.Errorf("Error: failed to read file %s: %v", cacheIDFile, err)
+				return nil, fmt.Errorf("Error: failed to read file %s: %v", cacheIDFile, err)
 			}
 			layer.cacheID = string(dat)
 
 			layerMap[layer.diff] = layer
 		}
 	}
-	return nil
+	return layerMap, nil
 }
 
-func verifyLayersOfImage(imagePath string) error {
+func verifyLayersOfImage(imagePath string, layerMap map[string]*layerDBItem, rawLayerMap map[string]*rawLayerType) error {
 	dat, err := ioutil.ReadFile(imagePath)
 	if err != nil {
 		return fmt.Errorf("Error: failed to read file %s: %v", imagePath, err)
@@ -185,7 +176,7 @@ func verifyLayersOfImage(imagePath string) error {
 	return nil
 }
 
-func verifyImages(imageDBFolder string) error {
+func verifyImages(imageDBFolder string, layerMap map[string]*layerDBItem, rawLayerMap map[string]*rawLayerType) error {
 	files, err := ioutil.ReadDir(imageDBFolder)
 	if err != nil {
 		return fmt.Errorf("Error: failed to read files in %s: %v", imageDBFolder, err)
@@ -193,7 +184,7 @@ func verifyImages(imageDBFolder string) error {
 	for _, f := range files {
 		if !f.IsDir() {
 			imagePath := filepath.Join(imageDBFolder, f.Name())
-			err := verifyLayersOfImage(imagePath)
+			err := verifyLayersOfImage(imagePath, layerMap, rawLayerMap)
 			if err != nil {
 				return err
 			}
