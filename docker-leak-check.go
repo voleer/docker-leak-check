@@ -68,6 +68,12 @@ func main() {
 			fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", rawLayerFolder)
 			os.Exit(-1)
 		}
+		containerFolder := filepath.Join(folder, "containers")
+		if !folderexists(containerFolder) {
+			fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", containerFolder)
+			os.Exit(-1)
+		}
+
 		rawLayerMap, err := createRawLayerMap(rawLayerFolder)
 		if err != nil {
 			fmt.Println(err)
@@ -81,6 +87,12 @@ func main() {
 		}
 
 		err = verifyImages(imageDBFolder, layerMap, rawLayerMap)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(-1)
+		}
+
+		err = visitContainerLayers(containerFolder, rawLayerMap)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(-1)
@@ -187,6 +199,22 @@ func verifyImages(imageDBFolder string, layerMap map[string]*layerDBItem, rawLay
 			err := verifyLayersOfImage(imagePath, layerMap, rawLayerMap)
 			if err != nil {
 				return err
+			}
+		}
+	}
+	return nil
+}
+
+func visitContainerLayers(containerFolder string, rawLayerMap map[string]*rawLayerType) error {
+	files, err := ioutil.ReadDir(containerFolder)
+	if err != nil {
+		return fmt.Errorf("Error: failed to read files in %s: %v", containerFolder, err)
+	}
+	for _, f := range files {
+		if f.IsDir() {
+			layer := rawLayerMap[f.Name()]
+			if layer != nil {
+				layer.visited = true
 			}
 		}
 	}
