@@ -48,8 +48,7 @@ func main() {
 	flag.StringVar(&folder, "folder", "", "Root of the Docker runtime (default \"C:\\ProgramData\\docker\")")
 	flag.Parse()
 	if folder == "" {
-		fmt.Println("Error: folder must be supplied")
-		os.Exit(-1)
+		folder = "C:\\ProgramData\\docker"
 	}
 	if folderexists(folder) {
 		imageDBFolder := filepath.Join(folder, "image", "windowsfilter", "imagedb", "content", "sha256")
