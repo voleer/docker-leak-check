@@ -50,68 +50,36 @@ func main() {
 	if folder == "" {
 		folder = "C:\\ProgramData\\docker"
 	}
-	if folderexists(folder) {
-		imageDBFolder := filepath.Join(folder, "image", "windowsfilter", "imagedb", "content", "sha256")
-		if !folderexists(imageDBFolder) {
-			fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", imageDBFolder)
-			os.Exit(-1)
-		}
-
-		layerDBFolder := filepath.Join(folder, "image", "windowsfilter", "layerdb", "sha256")
-		if !folderexists(layerDBFolder) {
-			fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", layerDBFolder)
-			os.Exit(-1)
-		}
-		rawLayerFolder := filepath.Join(folder, "windowsfilter")
-		if !folderexists(rawLayerFolder) {
-			fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", rawLayerFolder)
-			os.Exit(-1)
-		}
-		containerFolder := filepath.Join(folder, "containers")
-		if !folderexists(containerFolder) {
-			fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", containerFolder)
-			os.Exit(-1)
-		}
-
-		rawLayerMap, err := createRawLayerMap(rawLayerFolder)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(-1)
-		}
-
-		layerMap, err := populateLayerDBMap(layerDBFolder)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(-1)
-		}
-
-		err = verifyImages(imageDBFolder, layerMap, rawLayerMap)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(-1)
-		}
-
-		err = visitContainerLayers(containerFolder, rawLayerMap)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(-1)
-		}
-
-		for _, layer := range layerMap {
-			if layer.visited == false {
-				fmt.Println("Error: layer not referenced: ", layer.ID)
-				os.Exit(-1)
-			}
-		}
-
-		for _, rawLayer := range rawLayerMap {
-			if rawLayer.visited == false {
-				fmt.Println("Error: rawLayer not referenced: ", rawLayer.ID)
-				os.Exit(-1)
-			}
-		}
-	} else {
+	if !folderexists(folder) {
 		fmt.Println("Error: folder does not exist")
+		os.Exit(-1)
+	}
+
+	imageDBFolder := filepath.Join(folder, "image", "windowsfilter", "imagedb", "content", "sha256")
+	if !folderexists(imageDBFolder) {
+		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", imageDBFolder)
+		os.Exit(-1)
+	}
+
+	layerDBFolder := filepath.Join(folder, "image", "windowsfilter", "layerdb", "sha256")
+	if !folderexists(layerDBFolder) {
+		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", layerDBFolder)
+		os.Exit(-1)
+	}
+	rawLayerFolder := filepath.Join(folder, "windowsfilter")
+	if !folderexists(rawLayerFolder) {
+		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", rawLayerFolder)
+		os.Exit(-1)
+	}
+	containerFolder := filepath.Join(folder, "containers")
+	if !folderexists(containerFolder) {
+		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", containerFolder)
+		os.Exit(-1)
+	}
+
+	err := verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder)
+	if err != nil {
+		fmt.Println(err)
 		os.Exit(-1)
 	}
 }
@@ -215,6 +183,41 @@ func visitContainerLayers(containerFolder string, rawLayerMap map[string]*rawLay
 			if layer != nil {
 				layer.visited = true
 			}
+		}
+	}
+	return nil
+}
+
+func verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder string) error {
+	rawLayerMap, err := createRawLayerMap(rawLayerFolder)
+	if err != nil {
+		return err
+	}
+
+	layerMap, err := populateLayerDBMap(layerDBFolder)
+	if err != nil {
+		return err
+	}
+
+	err = verifyImages(imageDBFolder, layerMap, rawLayerMap)
+	if err != nil {
+		return err
+	}
+
+	err = visitContainerLayers(containerFolder, rawLayerMap)
+	if err != nil {
+		return err
+	}
+
+	for _, layer := range layerMap {
+		if layer.visited == false {
+			return fmt.Errorf("Error: layer not referenced: %s", layer.ID)
+		}
+	}
+
+	for _, rawLayer := range rawLayerMap {
+		if rawLayer.visited == false {
+			return fmt.Errorf("Error: rawLayer not referenced: %s", rawLayer.ID)
 		}
 	}
 	return nil
