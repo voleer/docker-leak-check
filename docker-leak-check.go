@@ -77,9 +77,20 @@ func main() {
 		os.Exit(-1)
 	}
 
-	err := verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder)
+	unreferencedLayers, unreferencedRawLayers, err := verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder)
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	if len(unreferencedLayers) != 0 || len(unreferencedRawLayers) != 0 {
+		for _, layer := range unreferencedLayers {
+			fmt.Println("Error: Unreferenced layer in layerDB: ", layer)
+		}
+
+		for _, layer := range unreferencedRawLayers {
+			fmt.Println("Error: Unreferenced layer in windowsfilter: ", layer)
+		}
 		os.Exit(-1)
 	}
 }
@@ -188,37 +199,39 @@ func visitContainerLayers(containerFolder string, rawLayerMap map[string]*rawLay
 	return nil
 }
 
-func verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder string) error {
+func verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder string) ([]string, []string, error) {
 	rawLayerMap, err := createRawLayerMap(rawLayerFolder)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	layerMap, err := populateLayerDBMap(layerDBFolder)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	err = verifyImages(imageDBFolder, layerMap, rawLayerMap)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	err = visitContainerLayers(containerFolder, rawLayerMap)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
+	var unreferencedLayers []string
 	for _, layer := range layerMap {
 		if layer.visited == false {
-			return fmt.Errorf("Error: layer not referenced: %s", layer.ID)
+			unreferencedLayers = append(unreferencedLayers, layer.ID)
 		}
 	}
 
+	var unreferencedRawLayers []string
 	for _, rawLayer := range rawLayerMap {
 		if rawLayer.visited == false {
-			return fmt.Errorf("Error: rawLayer not referenced: %s", rawLayer.ID)
+			unreferencedRawLayers = append(unreferencedRawLayers, rawLayer.ID)
 		}
 	}
-	return nil
+	return unreferencedLayers, unreferencedRawLayers, nil
 }
