@@ -13,6 +13,7 @@ import (
 
 type imageType struct {
 	RootFS *rootFS `json:"rootfs,omitempty"`
+	OS     string  `json:"os,omitempty"`
 }
 
 type rootFS struct {
@@ -48,7 +49,7 @@ func main() {
 	flag.StringVar(&folder, "folder", "", "Root of the Docker runtime (default \"C:\\ProgramData\\docker\")")
 	flag.Parse()
 	if folder == "" {
-		folder = "C:\\ProgramData\\docker"
+		folder = `C:\programdata\docker`
 	}
 	if !folderexists(folder) {
 		fmt.Println("Error: folder does not exist")
@@ -93,6 +94,7 @@ func main() {
 		}
 		os.Exit(-1)
 	}
+	fmt.Println("No errors found")
 }
 
 func createRawLayerMap(rawLayerFolder string) (map[string]*rawLayerType, error) {
@@ -152,6 +154,12 @@ func verifyLayersOfImage(imagePath string, layerMap map[string]*layerDBItem, raw
 	if err := json.Unmarshal(dat, image); err != nil {
 		return fmt.Errorf("Error: failed to read JSON contents of %s: %v", imagePath, err)
 	}
+
+	if image.OS == "linux" {
+		fmt.Printf("WARN: Skipping linux %s\n", imagePath)
+		return nil
+	}
+
 	for _, diff := range image.RootFS.DiffIDs {
 		layer := layerMap[diff]
 		if layer == nil {
