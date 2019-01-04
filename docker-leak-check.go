@@ -1,5 +1,3 @@
-// +build windows
-
 package main
 
 import (
@@ -9,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 type imageType struct {
@@ -46,28 +45,34 @@ func folderexists(path string) bool {
 
 func main() {
 	var folder string
-	flag.StringVar(&folder, "folder", "", "Root of the Docker runtime (default \"C:\\ProgramData\\docker\")")
+	defaultFolder := `C:\ProgramData\docker`
+	graphDriver := "windowsfilter"
+	if runtime.GOOS != "windows" {
+		defaultFolder = `/var/lib/docker`
+		graphDriver = "overlay2"
+	}
+	flag.StringVar(&folder, "folder", "", "Root of the Docker runtime (default \""+defaultFolder+"\")")
 	flag.Parse()
 	if folder == "" {
-		folder = `C:\programdata\docker`
+		folder = defaultFolder
 	}
 	if !folderexists(folder) {
 		fmt.Println("Error: folder does not exist")
 		os.Exit(-1)
 	}
 
-	imageDBFolder := filepath.Join(folder, "image", "windowsfilter", "imagedb", "content", "sha256")
+	imageDBFolder := filepath.Join(folder, "image", graphDriver, "imagedb", "content", "sha256")
 	if !folderexists(imageDBFolder) {
 		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", imageDBFolder)
 		os.Exit(-1)
 	}
 
-	layerDBFolder := filepath.Join(folder, "image", "windowsfilter", "layerdb", "sha256")
+	layerDBFolder := filepath.Join(folder, "image", graphDriver, "layerdb", "sha256")
 	if !folderexists(layerDBFolder) {
 		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", layerDBFolder)
 		os.Exit(-1)
 	}
-	rawLayerFolder := filepath.Join(folder, "windowsfilter")
+	rawLayerFolder := filepath.Join(folder, graphDriver)
 	if !folderexists(rawLayerFolder) {
 		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", rawLayerFolder)
 		os.Exit(-1)
@@ -90,7 +95,10 @@ func main() {
 		}
 
 		for _, layer := range unreferencedRawLayers {
-			fmt.Println("Error: Unreferenced layer in windowsfilter: ", layer)
+			if graphDriver == "overlay2" && layer == "l" {
+				continue
+			}
+			fmt.Println("Error: Unreferenced layer in "+graphDriver+": ", layer)
 		}
 		os.Exit(-1)
 	}
@@ -155,8 +163,8 @@ func verifyLayersOfImage(imagePath string, layerMap map[string]*layerDBItem, raw
 		return fmt.Errorf("Error: failed to read JSON contents of %s: %v", imagePath, err)
 	}
 
-	if image.OS == "linux" {
-		fmt.Printf("WARN: Skipping linux %s\n", imagePath)
+	if runtime.GOOS == "windows" && image.OS == "linux" {
+		fmt.Printf("WARN: Skipping linux (lcow) %s\n", imagePath)
 		return nil
 	}
 
