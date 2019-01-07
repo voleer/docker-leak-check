@@ -51,7 +51,9 @@ func main() {
 		defaultFolder = `/var/lib/docker`
 		graphDriver = "overlay2"
 	}
+	var remove bool
 	flag.StringVar(&folder, "folder", "", "Root of the Docker runtime (default \""+defaultFolder+"\")")
+	flag.BoolVar(&remove, "remove", false, "Remove unreferenced layers")
 	flag.Parse()
 	if folder == "" {
 		folder = defaultFolder
@@ -83,7 +85,7 @@ func main() {
 		os.Exit(-1)
 	}
 
-	unreferencedLayers, unreferencedRawLayers, err := verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder)
+	unreferencedLayers, unreferencedRawLayers, err := verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder, graphDriver)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(-1)
@@ -91,14 +93,27 @@ func main() {
 
 	if len(unreferencedLayers) != 0 || len(unreferencedRawLayers) != 0 {
 		for _, layer := range unreferencedLayers {
-			fmt.Println("Error: Unreferenced layer in layerDB: ", layer)
+			if remove {
+				fmt.Println("Info: Unreferenced layer in layerDB: ", layer, " removing...")
+				err = removeDiskLayer(layerDBFolder, layer)
+				if err != nil {
+					fmt.Println(err)
+				}
+			} else {
+				fmt.Println("Error: Unreferenced layer in layerDB: ", layer)
+			}
 		}
 
 		for _, layer := range unreferencedRawLayers {
-			if graphDriver == "overlay2" && layer == "l" {
-				continue
+			if remove {
+				fmt.Println("Info: Unreferenced layer in "+graphDriver+": ", layer, " removing...")
+				err = removeDiskLayer(rawLayerFolder, layer)
+				if err != nil {
+					fmt.Println(err)
+				}
+			} else {
+				fmt.Println("Error: Unreferenced layer in "+graphDriver+": ", layer)
 			}
-			fmt.Println("Error: Unreferenced layer in "+graphDriver+": ", layer)
 		}
 		os.Exit(-1)
 	}
@@ -215,7 +230,7 @@ func visitContainerLayers(containerFolder string, rawLayerMap map[string]*rawLay
 	return nil
 }
 
-func verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder string) ([]string, []string, error) {
+func verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder, graphDriver string) ([]string, []string, error) {
 	rawLayerMap, err := createRawLayerMap(rawLayerFolder)
 	if err != nil {
 		return nil, nil, err
@@ -245,6 +260,9 @@ func verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, contain
 
 	var unreferencedRawLayers []string
 	for _, rawLayer := range rawLayerMap {
+		if graphDriver == "overlay2" && rawLayer.ID == "l" {
+			continue
+		}
 		if rawLayer.visited == false {
 			unreferencedRawLayers = append(unreferencedRawLayers, rawLayer.ID)
 		}
