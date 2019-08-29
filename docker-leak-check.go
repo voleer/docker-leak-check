@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"runtime"
 
 	"github.com/voleer/docker-leak-check/pkg"
@@ -14,9 +15,11 @@ func main() {
 		defaultFolder = `/var/lib/docker`
 	}
 	var remove bool
-	flag.StringVar(&folder, "folder", defaultFolder, "Root of the Docker runtime (default \""+defaultFolder+"\")")
+	flag.StringVar(&folder, "folder", defaultFolder, "Root of the Docker runtime")
 	flag.BoolVar(&remove, "remove", false, "Remove unreferenced layers")
 	flag.Parse()
 
-	pkg.Run(folder, remove)
+	if err := pkg.Run(folder, remove); err != nil {
+		log.Fatalln(err)
+	}
 }
