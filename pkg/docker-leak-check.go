@@ -43,9 +43,14 @@ func folderexists(path string) bool {
 }
 
 func Run(folder string, remove bool) {
+	defaultFolder := `C:\ProgramData\docker`
 	graphDriver := "windowsfilter"
 	if runtime.GOOS != "windows" {
+		defaultFolder = `/var/lib/docker`
 		graphDriver = "overlay2"
+	}
+	if folder == "" {
+		folder = defaultFolder
 	}
 	if !folderexists(folder) {
 		fmt.Println("Error: folder does not exist")
