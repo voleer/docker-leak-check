@@ -1,4 +1,4 @@
-module voleer.io/docker-leak-check
+module github.com/voleer/docker-leak-check
 
 go 1.12
 
