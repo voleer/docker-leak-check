@@ -2,11 +2,13 @@ package pkg
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
+
+	"github.com/pkg/errors"
 )
 
 type imageType struct {
@@ -42,7 +44,7 @@ func folderexists(path string) bool {
 	return true
 }
 
-func Run(folder string, remove bool) {
+func Run(folder string, remove bool) error {
 	defaultFolder := `C:\ProgramData\docker`
 	graphDriver := "windowsfilter"
 	if runtime.GOOS != "windows" {
@@ -53,71 +55,66 @@ func Run(folder string, remove bool) {
 		folder = defaultFolder
 	}
 	if !folderexists(folder) {
-		fmt.Println("Error: folder does not exist")
-		os.Exit(-1)
+		return errors.Errorf("folder '%s' does not exist", folder)
 	}
 
 	imageDBFolder := filepath.Join(folder, "image", graphDriver, "imagedb", "content", "sha256")
 	if !folderexists(imageDBFolder) {
-		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", imageDBFolder)
-		os.Exit(-1)
+		return errors.Errorf("incorrect folder structure: expected '%s' to exist", imageDBFolder)
 	}
 
 	layerDBFolder := filepath.Join(folder, "image", graphDriver, "layerdb", "sha256")
 	if !folderexists(layerDBFolder) {
-		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", layerDBFolder)
-		os.Exit(-1)
+		return errors.Errorf("incorrect folder structure: expected '%s' to exist", layerDBFolder)
 	}
 	rawLayerFolder := filepath.Join(folder, graphDriver)
 	if !folderexists(rawLayerFolder) {
-		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", rawLayerFolder)
-		os.Exit(-1)
+		return errors.Errorf("incorrect folder structure: expected '%s' to exist", rawLayerFolder)
 	}
 	containerFolder := filepath.Join(folder, "containers")
 	if !folderexists(containerFolder) {
-		fmt.Printf("Error: incorrect folder structure: expected %s to exist\n", containerFolder)
-		os.Exit(-1)
+		return errors.Errorf("incorrect folder structure: expected '%s' to exist", containerFolder)
 	}
 
 	unreferencedLayers, unreferencedRawLayers, err := verifyImagesAndLayers(rawLayerFolder, layerDBFolder, imageDBFolder, containerFolder, graphDriver)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(-1)
+		return errors.Wrap(err, "failed to verify images and layers")
 	}
 
 	if len(unreferencedLayers) != 0 || len(unreferencedRawLayers) != 0 {
 		for _, layer := range unreferencedLayers {
 			if remove {
-				fmt.Println("Info: Unreferenced layer in layerDB: ", layer, " removing...")
+				log.Println("Info: Unreferenced layer in layerDB: ", layer, " removing...")
 				err = removeDiskLayer(layerDBFolder, layer)
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 				}
 			} else {
-				fmt.Println("Error: Unreferenced layer in layerDB: ", layer)
+				log.Println("Error: Unreferenced layer in layerDB: ", layer)
 			}
 		}
 
 		for _, layer := range unreferencedRawLayers {
 			if remove {
-				fmt.Println("Info: Unreferenced layer in "+graphDriver+": ", layer, " removing...")
+				log.Println("Info: Unreferenced layer in "+graphDriver+": ", layer, " removing...")
 				err = removeDiskLayer(rawLayerFolder, layer)
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 				}
 			} else {
-				fmt.Println("Error: Unreferenced layer in "+graphDriver+": ", layer)
+				log.Println("Error: Unreferenced layer in "+graphDriver+": ", layer)
 			}
 		}
-		os.Exit(-1)
+		return errors.New("Found some errors")
 	}
-	fmt.Println("No errors found")
+	log.Println("No errors found")
+	return nil
 }
 
 func createRawLayerMap(rawLayerFolder string) (map[string]*rawLayerType, error) {
 	files, err := ioutil.ReadDir(rawLayerFolder)
 	if err != nil {
-		return nil, fmt.Errorf("Error: failed to read files in %s: %v", rawLayerFolder, err)
+		return nil, errors.Errorf("failed to read files in %s: %v", rawLayerFolder, err)
 	}
 	var rawLayerMap = make(map[string]*rawLayerType)
 	for _, f := range files {
@@ -134,7 +131,7 @@ func populateLayerDBMap(layerDBFolder string) (map[string]*layerDBItem, error) {
 	// enumerate the existing layers in the LayerDB
 	files, err := ioutil.ReadDir(layerDBFolder)
 	if err != nil {
-		return nil, fmt.Errorf("Error: failed to read files in %s: %v", layerDBFolder, err)
+		return nil, errors.Errorf("failed to read files in %s: %v", layerDBFolder, err)
 	}
 	var layerMap = make(map[string]*layerDBItem)
 	for _, f := range files {
@@ -145,14 +142,14 @@ func populateLayerDBMap(layerDBFolder string) (map[string]*layerDBItem, error) {
 			diffFile := filepath.Join(layerDBFolder, f.Name(), "diff")
 			dat, err := ioutil.ReadFile(diffFile)
 			if err != nil {
-				return nil, fmt.Errorf("Error: failed to read file %s: %v", diffFile, err)
+				return nil, errors.Errorf("failed to read file %s: %v", diffFile, err)
 			}
 			layer.diff = string(dat)
 
 			cacheIDFile := filepath.Join(layerDBFolder, f.Name(), "cache-id")
 			dat, err = ioutil.ReadFile(cacheIDFile)
 			if err != nil {
-				return nil, fmt.Errorf("Error: failed to read file %s: %v", cacheIDFile, err)
+				return nil, errors.Errorf("failed to read file %s: %v", cacheIDFile, err)
 			}
 			layer.cacheID = string(dat)
 
@@ -165,25 +162,25 @@ func populateLayerDBMap(layerDBFolder string) (map[string]*layerDBItem, error) {
 func verifyLayersOfImage(imagePath string, layerMap map[string]*layerDBItem, rawLayerMap map[string]*rawLayerType) error {
 	dat, err := ioutil.ReadFile(imagePath)
 	if err != nil {
-		return fmt.Errorf("Error: failed to read file %s: %v", imagePath, err)
+		return errors.Errorf("failed to read file %s: %v", imagePath, err)
 	}
 	image := &imageType{}
 	if err := json.Unmarshal(dat, image); err != nil {
-		return fmt.Errorf("Error: failed to read JSON contents of %s: %v", imagePath, err)
+		return errors.Errorf("failed to read JSON contents of %s: %v", imagePath, err)
 	}
 
 	if runtime.GOOS == "windows" && image.OS == "linux" {
-		fmt.Printf("WARN: Skipping linux (lcow) %s\n", imagePath)
+		log.Printf("WARN: Skipping linux (lcow) %s\n", imagePath)
 		return nil
 	}
 
 	for _, diff := range image.RootFS.DiffIDs {
 		layer := layerMap[diff]
 		if layer == nil {
-			return fmt.Errorf("Error: expected layer with diff %s", diff)
+			return errors.Errorf("expected layer with diff %s", diff)
 		}
 		if rawLayerMap[layer.cacheID] == nil {
-			return fmt.Errorf("Error: expected on-disk layer %s\n", layer.cacheID)
+			return errors.Errorf("expected on-disk layer %s\n", layer.cacheID)
 		}
 		rawLayerMap[layer.cacheID].visited = true
 		layer.visited = true
@@ -194,7 +191,7 @@ func verifyLayersOfImage(imagePath string, layerMap map[string]*layerDBItem, raw
 func verifyImages(imageDBFolder string, layerMap map[string]*layerDBItem, rawLayerMap map[string]*rawLayerType) error {
 	files, err := ioutil.ReadDir(imageDBFolder)
 	if err != nil {
-		return fmt.Errorf("Error: failed to read files in %s: %v", imageDBFolder, err)
+		return errors.Errorf("failed to read files in %s: %v", imageDBFolder, err)
 	}
 	for _, f := range files {
 		if !f.IsDir() {
@@ -211,7 +208,7 @@ func verifyImages(imageDBFolder string, layerMap map[string]*layerDBItem, rawLay
 func visitContainerLayers(containerFolder string, rawLayerMap map[string]*rawLayerType) error {
 	files, err := ioutil.ReadDir(containerFolder)
 	if err != nil {
-		return fmt.Errorf("Error: failed to read files in %s: %v", containerFolder, err)
+		return errors.Errorf("failed to read files in %s: %v", containerFolder, err)
 	}
 	for _, f := range files {
 		if f.IsDir() {
