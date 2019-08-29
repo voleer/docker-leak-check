@@ -180,7 +180,7 @@ func verifyLayersOfImage(imagePath string, layerMap map[string]*layerDBItem, raw
 			return errors.Errorf("expected layer with diff %s", diff)
 		}
 		if rawLayerMap[layer.cacheID] == nil {
-			return errors.Errorf("expected on-disk layer %s\n", layer.cacheID)
+			return errors.Errorf("expected on-disk layer %s", layer.cacheID)
 		}
 		rawLayerMap[layer.cacheID].visited = true
 		layer.visited = true
